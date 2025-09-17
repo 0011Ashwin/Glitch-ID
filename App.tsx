@@ -55,8 +55,11 @@ const App: React.FC = () => {
   }, []);
 
   const findMember = (name: string, enrollmentNumber: string) => {
+    const trimmedName = name.trim();
+    const trimmedEnrollmentNumber = enrollmentNumber.trim();
+    
     const foundMember = members.find(
-      (m) => m.name.toLowerCase() === name.toLowerCase() && m.enrollmentNumber.toLowerCase() === enrollmentNumber.toLowerCase()
+      (m) => m.name.toLowerCase() === trimmedName.toLowerCase() && m.enrollmentNumber.toLowerCase() === trimmedEnrollmentNumber.toLowerCase()
     );
 
     if (foundMember) {

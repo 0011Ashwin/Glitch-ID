@@ -67,15 +67,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ setView, refreshMembers, i
       setIsProcessing(true);
       setSuccessMessage('');
        const newMemberData: Omit<Member, 'hackathonName'> = {
-        name: name.toUpperCase(),
-        enrollmentNumber: enrollmentNumber.toUpperCase(),
-        program,
-        gmail,
-        semester: semester || undefined,
+        name: name.trim().toUpperCase(),
+        enrollmentNumber: enrollmentNumber.trim().toUpperCase(),
+        program: program.trim(),
+        gmail: gmail.trim(),
+        semester: semester.trim() || undefined,
       };
 
       if (isTeamEntry) {
-        newMemberData.teamName = teamName;
+        newMemberData.teamName = teamName.trim();
         newMemberData.teamMembers = teamMembers.split(',').map(m => m.trim().toUpperCase()).filter(m => m && m !== newMemberData.name);
       }
 
@@ -83,7 +83,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ setView, refreshMembers, i
       setIsProcessing(false);
 
       if (result.success) {
-        let message = `${name} has been saved successfully!`;
+        let message = `${name.trim()} has been saved successfully!`;
         if (result.notice) message += ` (${result.notice})`;
         setSuccessMessage(message);
 
@@ -151,7 +151,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ setView, refreshMembers, i
             const isTeam = !!teamName;
             
             const teamMembersRaw = findValue(row, ['team member names', 'team members']);
-            const leaderName = String(name).toUpperCase();
+            const leaderName = String(name).trim().toUpperCase();
             
             let teamMembersList: string[] = [];
             if (isTeam && teamMembersRaw) {
@@ -163,11 +163,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ setView, refreshMembers, i
 
             return {
                 name: leaderName,
-                enrollmentNumber: String(enrollmentNo).toUpperCase(),
-                program: String(program),
-                gmail: String(email),
-                semester: findValue(row, ['semester']) ? String(findValue(row, ['semester'])) : undefined,
-                teamName: isTeam ? String(teamName) : undefined,
+                enrollmentNumber: String(enrollmentNo).trim().toUpperCase(),
+                program: String(program).trim(),
+                gmail: String(email).trim(),
+                semester: findValue(row, ['semester']) ? String(findValue(row, ['semester'])).trim() : undefined,
+                teamName: isTeam ? String(teamName).trim() : undefined,
                 teamMembers: isTeam ? teamMembersList : undefined,
             };
         }).filter((member): member is Omit<Member, 'hackathonName'> => member !== null);
