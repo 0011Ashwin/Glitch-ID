@@ -1,4 +1,3 @@
-
 export interface Member {
   name: string;
   enrollmentNumber: string;
@@ -10,10 +9,10 @@ export interface Member {
   teamMembers?: string[];
 }
 
-// FIX: Add VerifiedMember interface to extend Member with a verification timestamp.
+// FIX: Add VerifiedMember interface to resolve import error in VerificationScanner.tsx.
 export interface VerifiedMember extends Member {
   verifiedAt: Date;
 }
 
-// FIX: Add 'verification' view to enable the scanner component.
-export type View = 'landing' | 'adminLogin' | 'admin' | 'studentLogin' | 'idCard' | 'verification';
+// FIX: Add 'verificationScanner' view to enable scanner component integration.
+export type View = 'landing' | 'adminLogin' | 'admin' | 'studentLogin' | 'idCard' | 'verificationScanner';

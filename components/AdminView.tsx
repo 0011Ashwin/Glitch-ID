@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import type { Member, View } from '../types';
 
@@ -373,14 +372,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ setView, refreshMembers, i
         </div>
       )}
 
-      {/* FIX: Add button to navigate to the verification scanner. */}
-      <div className="pt-4 border-t border-purple-500/30">
-        <button
-          onClick={() => setView('verification')}
-          className="w-full py-3 font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors duration-300 shadow-lg"
-        >
-          Go to Verification Scanner
-        </button>
+      {/* FIX: Add a new section with a button to launch the verification scanner. */}
+      <div className="pt-6 border-t border-purple-500/30">
+          <h3 className="text-lg font-bold text-white text-center mb-2">Verification Tool</h3>
+          <p className="text-xs text-center text-gray-400 mb-4">Scan participant QR codes for event check-in.</p>
+          <button 
+            onClick={() => setView('verificationScanner')}
+            className="w-full py-3 font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors duration-300 shadow-lg"
+          >
+            Launch QR Scanner
+          </button>
       </div>
 
       <button onClick={() => setView('landing')} className="w-full py-2 mt-2 text-sm text-purple-300 hover:text-white transition-colors">

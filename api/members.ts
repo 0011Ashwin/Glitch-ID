@@ -1,20 +1,24 @@
 import { kv } from '@vercel/kv';
-import type { NextApiRequest, NextApiResponse } from 'next';
 import type { Member } from '../types';
+
+export const config = {
+  runtime: 'edge',
+};
 
 const MEMBERS_KEY = 'members';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(request: Request): Promise<Response> {
+  const headers = { 'Content-Type': 'application/json' };
   try {
-    if (req.method === 'GET') {
+    if (request.method === 'GET') {
       const members = await kv.get(MEMBERS_KEY);
-      res.status(200).json({ members: members || [] });
+      return new Response(JSON.stringify({ members: members || [] }), { status: 200, headers });
 
-    } else if (req.method === 'POST') {
-      const { members } = req.body as { members: Omit<Member, 'hackathonName'>[] };
+    } else if (request.method === 'POST') {
+      const { members } = await request.json() as { members: Omit<Member, 'hackathonName'>[] };
 
       if (!Array.isArray(members)) {
-        return res.status(400).json({ error: 'Invalid data format. "members" should be an array.' });
+        return new Response(JSON.stringify({ error: 'Invalid data format. "members" should be an array.' }), { status: 400, headers });
       }
 
       const newMembers: Member[] = members.map(memberData => ({
@@ -23,18 +27,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }));
 
       await kv.set(MEMBERS_KEY, newMembers);
-      res.status(200).json({ message: 'Data saved successfully.' });
+      return new Response(JSON.stringify({ message: 'Data saved successfully.' }), { status: 200, headers });
 
-    } else if (req.method === 'DELETE') {
+    } else if (request.method === 'DELETE') {
       await kv.del(MEMBERS_KEY);
-      res.status(200).json({ message: 'All data cleared.' });
+      return new Response(JSON.stringify({ message: 'All data cleared.' }), { status: 200, headers });
 
     } else {
-      res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
-      res.status(405).end(`Method ${req.method} Not Allowed`);
+      const allowHeaders = { 'Allow': 'GET, POST, DELETE' };
+      return new Response(`Method ${request.method} Not Allowed`, { status: 405, headers: allowHeaders });
     }
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ error: 'An internal server error occurred.' });
+    return new Response(JSON.stringify({ error: 'An internal server error occurred.' }), { status: 500, headers });
   }
 }

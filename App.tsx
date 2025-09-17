@@ -1,24 +1,21 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { IdCard } from './components/IdCard';
 import { LandingPage } from './components/LandingPage';
 import { AdminView } from './components/AdminView';
 import { StudentLogin } from './components/StudentLogin';
 import { AdminLogin } from './components/AdminLogin';
-// FIX: Import VerificationScanner component.
+// FIX: Import VerificationScanner to use the component.
 import { VerificationScanner } from './components/VerificationScanner';
-// FIX: Import VerifiedMember type.
+// FIX: Import VerifiedMember type to support the verification feature.
 import type { Member, View, VerifiedMember } from './types';
 import html2canvas from 'html2canvas';
 
 const LOCAL_STORAGE_KEY = 'members_data';
-// FIX: Add a local storage key for verified members.
-const VERIFIED_LOCAL_STORAGE_KEY = 'verified_members_data';
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('landing');
   const [members, setMembers] = useState<Member[]>([]);
-  // FIX: Add state to store verified members.
+  // FIX: Add state to manage verified members for the scanner.
   const [verifiedMembers, setVerifiedMembers] = useState<VerifiedMember[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [currentMember, setCurrentMember] = useState<Member | null>(null);
@@ -55,25 +52,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchMembers();
-    // FIX: Load verified members from local storage on initial load.
-    try {
-      const localData = localStorage.getItem(VERIFIED_LOCAL_STORAGE_KEY);
-      if (localData) {
-        const parsedData = JSON.parse(localData).map((m: any) => ({
-          ...m,
-          verifiedAt: new Date(m.verifiedAt), // Rehydrate Date objects
-        }));
-        setVerifiedMembers(parsedData);
-      }
-    } catch (err) {
-      console.error("Could not load verified members from local storage.", err);
-    }
   }, []);
-
-  // FIX: Add effect to persist verified members to local storage.
-  useEffect(() => {
-    localStorage.setItem(VERIFIED_LOCAL_STORAGE_KEY, JSON.stringify(verifiedMembers));
-  }, [verifiedMembers]);
 
   const findMember = (name: string, enrollmentNumber: string) => {
     const foundMember = members.find(
@@ -97,29 +76,26 @@ const App: React.FC = () => {
       setError('Incorrect password. Please try again.');
     }
   };
-
-  // FIX: Add function to handle member verification logic.
+  
+  // FIX: Implement verifyMember function to handle QR code scan logic.
   const verifyMember = (enrollmentNumber: string): { member: Member; status: 'verified' | 'already_verified' } | null => {
-    const lowerCaseEnrollmentNumber = enrollmentNumber.toLowerCase();
-
-    const isAlreadyVerified = verifiedMembers.find(m => m.enrollmentNumber.toLowerCase() === lowerCaseEnrollmentNumber);
+    const normalizedEnrollment = enrollmentNumber.trim().toLowerCase();
+    
+    const isAlreadyVerified = verifiedMembers.find(m => m.enrollmentNumber.toLowerCase() === normalizedEnrollment);
     if (isAlreadyVerified) {
       return { member: isAlreadyVerified, status: 'already_verified' };
     }
 
-    const memberToVerify = members.find(m => m.enrollmentNumber.toLowerCase() === lowerCaseEnrollmentNumber);
+    const memberToVerify = members.find(m => m.enrollmentNumber.toLowerCase() === normalizedEnrollment);
     if (memberToVerify) {
-      const newVerifiedMember: VerifiedMember = {
-        ...memberToVerify,
-        verifiedAt: new Date(),
-      };
-      setVerifiedMembers(prev => [newVerifiedMember, ...prev]);
+      const newVerifiedMember: VerifiedMember = { ...memberToVerify, verifiedAt: new Date() };
+      setVerifiedMembers(prev => [...prev, newVerifiedMember].sort((a,b) => b.verifiedAt.getTime() - a.verifiedAt.getTime()));
       return { member: newVerifiedMember, status: 'verified' };
     }
 
     return null;
   };
-  
+
   const handleDownload = () => {
     if (idCardRef.current) {
       html2canvas(idCardRef.current, {
@@ -152,6 +128,9 @@ const App: React.FC = () => {
         return <AdminLogin handleLogin={handleAdminLogin} error={error} setError={setError} setView={setView} />;
       case 'admin':
         return <AdminView setView={setView} refreshMembers={fetchMembers} initialMemberCount={members.length} />;
+      // FIX: Add a case to render the VerificationScanner component.
+      case 'verificationScanner':
+        return <VerificationScanner verifiedMembers={verifiedMembers} verifyMember={verifyMember} setView={setView} />;
       case 'studentLogin':
         return <StudentLogin findMember={findMember} error={error} setError={setError} setView={setView} />;
       case 'idCard':
@@ -180,9 +159,6 @@ const App: React.FC = () => {
           );
         }
         return null;
-      // FIX: Add a case to render the VerificationScanner.
-      case 'verification':
-        return <VerificationScanner verifiedMembers={verifiedMembers} verifyMember={verifyMember} setView={setView} />;
       case 'landing':
       default:
         return <LandingPage setView={setView} />;
