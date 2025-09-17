@@ -1,4 +1,4 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 import type { Member } from '../types';
 
 export const config = {
@@ -7,9 +7,14 @@ export const config = {
 
 const MEMBERS_KEY = 'members';
 
+// Initialize Redis client from environment variables
+// These must be set in your Vercel project settings
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
 export default async function handler(request: Request): Promise<Response> {
-  // FIX: Add strong cache-control headers to prevent Vercel from caching the API response.
-  // This ensures that the frontend always receives the latest member list from the database.
   const headers = { 
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
@@ -20,8 +25,9 @@ export default async function handler(request: Request): Promise<Response> {
 
   try {
     if (request.method === 'GET') {
-      const members = await kv.get(MEMBERS_KEY);
-      return new Response(JSON.stringify({ members: members || [] }), { status: 200, headers });
+      const data = await redis.get(MEMBERS_KEY);
+      const members = data ? JSON.parse(data as string) : [];
+      return new Response(JSON.stringify({ members }), { status: 200, headers });
 
     } else if (request.method === 'POST') {
       const { members } = await request.json() as { members: Omit<Member, 'hackathonName'>[] };
@@ -35,11 +41,12 @@ export default async function handler(request: Request): Promise<Response> {
         hackathonName: 'Glitch 1.0',
       }));
 
-      await kv.set(MEMBERS_KEY, newMembers);
+      // Standard Redis requires data to be stringified
+      await redis.set(MEMBERS_KEY, JSON.stringify(newMembers));
       return new Response(JSON.stringify({ message: 'Data saved successfully.' }), { status: 200, headers });
 
     } else if (request.method === 'DELETE') {
-      await kv.del(MEMBERS_KEY);
+      await redis.del(MEMBERS_KEY);
       return new Response(JSON.stringify({ message: 'All data cleared.' }), { status: 200, headers });
 
     } else {
@@ -48,6 +55,10 @@ export default async function handler(request: Request): Promise<Response> {
     }
   } catch (error) {
     console.error('API Error:', error);
+    // Check if the error is due to missing Redis credentials
+    if (error instanceof Error && (error.message.includes('UPSTASH_REDIS_REST_URL') || error.message.includes('UPSTASH_REDIS_REST_TOKEN'))) {
+       return new Response(JSON.stringify({ error: 'Redis database is not configured. Please set environment variables.' }), { status: 500, headers });
+    }
     return new Response(JSON.stringify({ error: 'An internal server error occurred.' }), { status: 500, headers });
   }
 }
