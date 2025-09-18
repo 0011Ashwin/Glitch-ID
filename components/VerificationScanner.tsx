@@ -25,41 +25,83 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
   const lastEnrollmentRef = useRef<string>('');
 
   useEffect(() => {
-    const qrCodeScanner = new Html5QrcodeScanner(
-      "qr-reader",
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      false
-    );
+    let scanner: any = null;
+    let cancelled = false;
 
-    const onScanSuccess = async (decodedText: string, decodedResult: any) => {
-      const now = Date.now();
-      if (now - lastScanTimeRef.current < 1200) return; // debounce rapid scans
+    const loadScriptIfNeeded = () => new Promise<void>((resolve, reject) => {
+      try {
+        if (typeof (globalThis as any).Html5QrcodeScanner !== 'undefined') return resolve();
+        const existing = document.querySelector('script[data-html5-qrcode]');
+        if (existing) {
+          existing.addEventListener('load', () => resolve());
+          existing.addEventListener('error', () => reject(new Error('Failed to load script')));
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js';
+        s.async = true;
+        s.setAttribute('data-html5-qrcode', '1');
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Failed to load html5-qrcode'));
+        document.head.appendChild(s);
+      } catch (e) {
+        reject(e);
+      }
+    });
 
-      const outcome = await scanAndVerify(decodedText, verifyMember);
-      const enrollment = outcome.member.enrollmentNumber;
-
-      if (enrollment === lastEnrollmentRef.current && now - lastScanTimeRef.current < 2500) {
-        return; // ignore duplicate of same code in short interval
+    const initScanner = async () => {
+      try {
+        await loadScriptIfNeeded();
+      } catch (e) {
+        console.error('Failed to load html5-qrcode library', e);
+        return;
       }
 
-      lastScanTimeRef.current = now;
-      lastEnrollmentRef.current = enrollment;
+      if (cancelled) return;
 
-      setLastResult(outcome);
-      // Optional: Add a sound effect on scan
-      // new Audio('/scan-success.mp3').play();
+      try {
+        scanner = new Html5QrcodeScanner(
+          'qr-reader',
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          false
+        );
+
+        const onScanSuccess = async (decodedText: string, decodedResult: any) => {
+          const now = Date.now();
+          if (now - lastScanTimeRef.current < 1200) return; // debounce rapid scans
+
+          const outcome = await scanAndVerify(decodedText, verifyMember);
+          const enrollment = outcome.member.enrollmentNumber;
+
+          if (enrollment === lastEnrollmentRef.current && now - lastScanTimeRef.current < 2500) {
+            return; // ignore duplicate of same code in short interval
+          }
+
+          lastScanTimeRef.current = now;
+          lastEnrollmentRef.current = enrollment;
+
+          setLastResult(outcome);
+        };
+
+        const onScanFailure = (error: string) => {
+          // ignore failures; scanner continuously tries
+        };
+
+        scanner.render(onScanSuccess, onScanFailure);
+      } catch (err) {
+        console.error('Failed to initialize QR scanner', err);
+      }
     };
 
-    const onScanFailure = (error: string) => {
-      // handle scan failure, usually better to ignore and let the user keep trying.
-    };
-
-    qrCodeScanner.render(onScanSuccess, onScanFailure);
+    initScanner();
 
     return () => {
-      qrCodeScanner.clear().catch((error: any) => {
-        console.error("Failed to clear html5-qrcode-scanner.", error);
-      });
+      cancelled = true;
+      if (scanner && typeof scanner.clear === 'function') {
+        scanner.clear().catch((error: any) => {
+          console.error('Failed to clear html5-qrcode-scanner.', error);
+        });
+      }
     };
   }, [verifyMember]);
 
