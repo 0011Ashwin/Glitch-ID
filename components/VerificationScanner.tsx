@@ -27,8 +27,25 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
       false
     );
 
-    const onScanSuccess = (decodedText: string, decodedResult: any) => {
-      const result = verifyMember(decodedText);
+    const onScanSuccess = async (decodedText: string, decodedResult: any) => {
+      const extractEnrollment = async (): Promise<string> => {
+        // If it looks like a signed token (base64url.payload.signature), ask server to verify
+        if (decodedText.includes('.')) {
+          try {
+            const res = await fetch(`/api/verify?token=${encodeURIComponent(decodedText)}`, { cache: 'no-store' });
+            if (res.ok) {
+              const json = await res.json();
+              if (json && typeof json.enrollment === 'string') return json.enrollment;
+            }
+          } catch {
+            // ignore and fall back to raw text
+          }
+        }
+        return decodedText;
+      };
+
+      const enrollment = await extractEnrollment();
+      const result = verifyMember(enrollment);
       if (result) {
         if (result.status === 'verified') {
           setLastResult({ member: result.member, status: 'verified', message: 'Verification Successful!' });
@@ -36,7 +53,7 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
           setLastResult({ member: result.member, status: 'already_verified', message: 'Already Verified.' });
         }
       } else {
-        setLastResult({ member: { name: 'Unknown', enrollmentNumber: decodedText, program: '', gmail: '', hackathonName: '' }, status: 'not_found', message: 'Participant Not Found!' });
+        setLastResult({ member: { name: 'Unknown', enrollmentNumber: enrollment, program: '', gmail: '', hackathonName: '' }, status: 'not_found', message: 'Participant Not Found!' });
       }
       // Optional: Add a sound effect on scan
       // new Audio('/scan-success.mp3').play();
