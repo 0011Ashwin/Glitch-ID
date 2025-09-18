@@ -93,6 +93,47 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
     };
 
     const initScanner = async () => {
+      // First try to import local package (works even if external scripts are blocked)
+      try {
+        const mod = await import('html5-qrcode');
+        const Html5QrcodeScannerLocal = (mod as any).Html5QrcodeScanner || (mod as any).Html5Qrcode;
+        if (Html5QrcodeScannerLocal) {
+          if (cancelled) return;
+          scanner = new (Html5QrcodeScannerLocal as any)(
+            'qr-reader',
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            false
+          );
+
+          const onScanSuccess = async (decodedText: string, decodedResult: any) => {
+            const now = Date.now();
+            if (now - lastScanTimeRef.current < 1200) return; // debounce rapid scans
+
+            const outcome = await scanAndVerify(decodedText, verifyMember);
+            const enrollment = outcome.member.enrollmentNumber;
+
+            if (enrollment === lastEnrollmentRef.current && now - lastScanTimeRef.current < 2500) {
+              return; // ignore duplicate of same code in short interval
+            }
+
+            lastScanTimeRef.current = now;
+            lastEnrollmentRef.current = enrollment;
+
+            setLastResult(outcome);
+          };
+
+          const onScanFailure = (error: string) => {
+            // ignore failures; scanner continuously tries
+          };
+
+          scanner.render(onScanSuccess, onScanFailure);
+          return;
+        }
+      } catch (e) {
+        console.warn('Local html5-qrcode import failed, falling back to CDN', e);
+      }
+
+      // Fallback to CDNs
       try {
         await loadWithFallback();
       } catch (e) {
