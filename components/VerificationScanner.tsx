@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { VerifiedMember, Member, View } from '../types';
+import { scanAndVerify } from '../utils/qr';
 
 declare var Html5QrcodeScanner: any;
 declare var XLSX: any;
@@ -19,41 +20,178 @@ interface ScanResult {
 export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifiedMembers, verifyMember, setView }) => {
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
   const [showVerifiedList, setShowVerifiedList] = useState(false);
-  
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const lastScanTimeRef = useRef<number>(0);
+  const lastEnrollmentRef = useRef<string>('');
+
   useEffect(() => {
-    const qrCodeScanner = new Html5QrcodeScanner(
-      "qr-reader", 
-      { fps: 10, qrbox: { width: 250, height: 250 } }, 
-      false
-    );
+    let scanner: any = null;
+    let cancelled = false;
 
-    const onScanSuccess = (decodedText: string, decodedResult: any) => {
-      const result = verifyMember(decodedText);
-      if (result) {
-        if (result.status === 'verified') {
-          setLastResult({ member: result.member, status: 'verified', message: 'Verification Successful!' });
-        } else {
-          setLastResult({ member: result.member, status: 'already_verified', message: 'Already Verified.' });
+    const CDN_URLS = [
+      'https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js',
+      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js',
+      'https://rawcdn.githack.com/mebjas/html5qrcode/2.3.8/minified/html5-qrcode.min.js'
+    ];
+
+    const loadScript = (url: string, timeoutMs = 8000) => new Promise<void>((resolve, reject) => {
+      try {
+        // If already available globally, resolve immediately
+        if ((globalThis as any).Html5QrcodeScanner) return resolve();
+
+        // Avoid adding duplicate tags for same url
+        const existing = document.querySelector(`script[src="${url}"]`);
+        if (existing) {
+          if ((existing as HTMLScriptElement).getAttribute('data-loaded') === '1') return resolve();
+          (existing as HTMLScriptElement).addEventListener('load', () => resolve());
+          (existing as HTMLScriptElement).addEventListener('error', () => reject(new Error('Failed to load script')));
+          return;
         }
-      } else {
-        setLastResult({ member: { name: 'Unknown', enrollmentNumber: decodedText, program: '', gmail: '', hackathonName: '' }, status: 'not_found', message: 'Participant Not Found!' });
+
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = true;
+        let done = false;
+        const t = setTimeout(() => {
+          if (done) return;
+          done = true;
+          s.onerror = null; s.onload = null;
+          reject(new Error('Script load timeout'));
+        }, timeoutMs);
+        s.onload = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(t);
+          (s as HTMLScriptElement).setAttribute('data-loaded', '1');
+          resolve();
+        };
+        s.onerror = (e) => {
+          if (done) return;
+          done = true;
+          clearTimeout(t);
+          reject(new Error('Failed to load html5-qrcode'));
+        };
+        document.head.appendChild(s);
+      } catch (e) {
+        reject(e);
       }
-      // Optional: Add a sound effect on scan
-      // new Audio('/scan-success.mp3').play();
+    });
+
+    const loadWithFallback = async () => {
+      setLoadError(null);
+      for (const url of CDN_URLS) {
+        try {
+          await loadScript(url);
+          if ((globalThis as any).Html5QrcodeScanner) return;
+        } catch (err) {
+          console.warn('Failed to load html5-qrcode from', url, err);
+          // try next
+        }
+      }
+      throw new Error('All CDNs failed');
     };
 
-    const onScanFailure = (error: string) => {
-      // handle scan failure, usually better to ignore and let the user keep trying.
+    const initScanner = async () => {
+      // First try to import local package (works even if external scripts are blocked)
+      try {
+        const mod = await import('html5-qrcode');
+        const Html5QrcodeScannerLocal = (mod as any).Html5QrcodeScanner || (mod as any).Html5Qrcode;
+        if (Html5QrcodeScannerLocal) {
+          if (cancelled) return;
+          scanner = new (Html5QrcodeScannerLocal as any)(
+            'qr-reader',
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            false
+          );
+
+          const onScanSuccess = async (decodedText: string, decodedResult: any) => {
+            const now = Date.now();
+            if (now - lastScanTimeRef.current < 1200) return; // debounce rapid scans
+
+            const outcome = await scanAndVerify(decodedText, verifyMember);
+            const enrollment = outcome.member.enrollmentNumber;
+
+            if (enrollment === lastEnrollmentRef.current && now - lastScanTimeRef.current < 2500) {
+              return; // ignore duplicate of same code in short interval
+            }
+
+            lastScanTimeRef.current = now;
+            lastEnrollmentRef.current = enrollment;
+
+            setLastResult(outcome);
+          };
+
+          const onScanFailure = (error: string) => {
+            // ignore failures; scanner continuously tries
+          };
+
+          scanner.render(onScanSuccess, onScanFailure);
+          return;
+        }
+      } catch (e) {
+        console.warn('Local html5-qrcode import failed, falling back to CDN', e);
+      }
+
+      // Fallback to CDNs
+      try {
+        await loadWithFallback();
+      } catch (e) {
+        console.error('Failed to load html5-qrcode library', e);
+        setLoadError('Failed to load scanner library. Check network or allow external scripts.');
+        return;
+      }
+
+      if (cancelled) return;
+
+      try {
+        scanner = new Html5QrcodeScanner(
+          'qr-reader',
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          false
+        );
+
+        const onScanSuccess = async (decodedText: string, decodedResult: any) => {
+          const now = Date.now();
+          if (now - lastScanTimeRef.current < 1200) return; // debounce rapid scans
+
+          const outcome = await scanAndVerify(decodedText, verifyMember);
+          const enrollment = outcome.member.enrollmentNumber;
+
+          if (enrollment === lastEnrollmentRef.current && now - lastScanTimeRef.current < 2500) {
+            return; // ignore duplicate of same code in short interval
+          }
+
+          lastScanTimeRef.current = now;
+          lastEnrollmentRef.current = enrollment;
+
+          setLastResult(outcome);
+        };
+
+        const onScanFailure = (error: string) => {
+          // ignore failures; scanner continuously tries
+        };
+
+        scanner.render(onScanSuccess, onScanFailure);
+      } catch (err) {
+        console.error('Failed to initialize QR scanner', err);
+        setLoadError('Failed to initialize scanner. See console for details.');
+      }
     };
 
-    qrCodeScanner.render(onScanSuccess, onScanFailure);
+    initScanner();
 
     return () => {
-      qrCodeScanner.clear().catch((error: any) => {
-        console.error("Failed to clear html5-qrcode-scanner.", error);
-      });
+      cancelled = true;
+      if (scanner && typeof scanner.clear === 'function') {
+        scanner.clear().catch((error: any) => {
+          console.error('Failed to clear html5-qrcode-scanner.', error);
+        });
+      }
     };
   }, [verifyMember]);
+
+
 
   const handleExport = () => {
     const dataToExport = verifiedMembers.map(m => ({
@@ -86,6 +224,12 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
       </h2>
       
       <div id="qr-reader" className="w-full rounded-lg overflow-hidden"></div>
+
+      {loadError && (
+        <div className="p-3 rounded-md bg-red-700/30 border border-red-600 text-sm text-red-100">
+          {loadError}
+        </div>
+      )}
 
       {lastResult && (
         <div className={`p-4 my-4 rounded-lg border-2 animate-fade-in-up bg-black/40 ${getResultBorderColor()}`}>
