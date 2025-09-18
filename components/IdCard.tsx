@@ -1,6 +1,7 @@
 import React, { useRef, MouseEvent } from 'react';
 import type { Member } from '../types';
 import { LogoPlaceholder } from './icons';
+import { QrCode } from './QrCode';
 
 interface CardProps {
   member: Member;
