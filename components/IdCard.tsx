@@ -141,10 +141,14 @@ export const IdCard = React.forwardRef<HTMLDivElement, CardProps>(({ member }, r
         </section>
 
         {/* Footer */}
-        <footer className="flex items-center justify-start mt-4" style={{ transform: 'translateZ(30px)' }}>
+        <footer className="flex items-center justify-between mt-4" style={{ transform: 'translateZ(30px)' }}>
           <div className="flex items-center gap-2">
             <LogoPlaceholder className="w-8 h-8 text-purple-300"/>
             <span className="text-xs font-mono text-purple-300">Official Participant</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <QrCode member={member} size={84} className="rounded-md shadow-md" />
+            <span className="mt-1 text-[10px] text-purple-300">Scan at Check-in</span>
           </div>
         </footer>
       </div>
