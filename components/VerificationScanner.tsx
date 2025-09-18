@@ -184,6 +184,12 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
       
       <div id="qr-reader" className="w-full rounded-lg overflow-hidden"></div>
 
+      {loadError && (
+        <div className="p-3 rounded-md bg-red-700/30 border border-red-600 text-sm text-red-100">
+          {loadError}
+        </div>
+      )}
+
       {lastResult && (
         <div className={`p-4 my-4 rounded-lg border-2 animate-fade-in-up bg-black/40 ${getResultBorderColor()}`}>
           <h3 className="text-xl font-bold text-white">{lastResult.message}</h3>
