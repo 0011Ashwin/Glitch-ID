@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { VerifiedMember, Member, View } from '../types';
+import { scanAndVerify } from '../utils/qr';
 
 declare var Html5QrcodeScanner: any;
 declare var XLSX: any;
@@ -20,41 +21,31 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
   const [showVerifiedList, setShowVerifiedList] = useState(false);
   
+  const lastScanTimeRef = useRef<number>(0);
+  const lastEnrollmentRef = useRef<string>('');
+
   useEffect(() => {
     const qrCodeScanner = new Html5QrcodeScanner(
-      "qr-reader", 
-      { fps: 10, qrbox: { width: 250, height: 250 } }, 
+      "qr-reader",
+      { fps: 10, qrbox: { width: 250, height: 250 } },
       false
     );
 
     const onScanSuccess = async (decodedText: string, decodedResult: any) => {
-      const extractEnrollment = async (): Promise<string> => {
-        // If it looks like a signed token (base64url.payload.signature), ask server to verify
-        if (decodedText.includes('.')) {
-          try {
-            const res = await fetch(`/api/verify?token=${encodeURIComponent(decodedText)}`, { cache: 'no-store' });
-            if (res.ok) {
-              const json = await res.json();
-              if (json && typeof json.enrollment === 'string') return json.enrollment;
-            }
-          } catch {
-            // ignore and fall back to raw text
-          }
-        }
-        return decodedText;
-      };
+      const now = Date.now();
+      if (now - lastScanTimeRef.current < 1200) return; // debounce rapid scans
 
-      const enrollment = await extractEnrollment();
-      const result = verifyMember(enrollment);
-      if (result) {
-        if (result.status === 'verified') {
-          setLastResult({ member: result.member, status: 'verified', message: 'Verification Successful!' });
-        } else {
-          setLastResult({ member: result.member, status: 'already_verified', message: 'Already Verified.' });
-        }
-      } else {
-        setLastResult({ member: { name: 'Unknown', enrollmentNumber: enrollment, program: '', gmail: '', hackathonName: '' }, status: 'not_found', message: 'Participant Not Found!' });
+      const outcome = await scanAndVerify(decodedText, verifyMember);
+      const enrollment = outcome.member.enrollmentNumber;
+
+      if (enrollment === lastEnrollmentRef.current && now - lastScanTimeRef.current < 2500) {
+        return; // ignore duplicate of same code in short interval
       }
+
+      lastScanTimeRef.current = now;
+      lastEnrollmentRef.current = enrollment;
+
+      setLastResult(outcome);
       // Optional: Add a sound effect on scan
       // new Audio('/scan-success.mp3').play();
     };
