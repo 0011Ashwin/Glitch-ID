@@ -20,7 +20,8 @@ interface ScanResult {
 export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifiedMembers, verifyMember, setView }) => {
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
   const [showVerifiedList, setShowVerifiedList] = useState(false);
-  
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const lastScanTimeRef = useRef<number>(0);
   const lastEnrollmentRef = useRef<string>('');
 
@@ -28,32 +29,75 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
     let scanner: any = null;
     let cancelled = false;
 
-    const loadScriptIfNeeded = () => new Promise<void>((resolve, reject) => {
+    const CDN_URLS = [
+      'https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js',
+      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js',
+      'https://rawcdn.githack.com/mebjas/html5qrcode/2.3.8/minified/html5-qrcode.min.js'
+    ];
+
+    const loadScript = (url: string, timeoutMs = 8000) => new Promise<void>((resolve, reject) => {
       try {
-        if (typeof (globalThis as any).Html5QrcodeScanner !== 'undefined') return resolve();
-        const existing = document.querySelector('script[data-html5-qrcode]');
+        // If already available globally, resolve immediately
+        if ((globalThis as any).Html5QrcodeScanner) return resolve();
+
+        // Avoid adding duplicate tags for same url
+        const existing = document.querySelector(`script[src="${url}"]`);
         if (existing) {
-          existing.addEventListener('load', () => resolve());
-          existing.addEventListener('error', () => reject(new Error('Failed to load script')));
+          if ((existing as HTMLScriptElement).getAttribute('data-loaded') === '1') return resolve();
+          (existing as HTMLScriptElement).addEventListener('load', () => resolve());
+          (existing as HTMLScriptElement).addEventListener('error', () => reject(new Error('Failed to load script')));
           return;
         }
+
         const s = document.createElement('script');
-        s.src = 'https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js';
+        s.src = url;
         s.async = true;
-        s.setAttribute('data-html5-qrcode', '1');
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error('Failed to load html5-qrcode'));
+        let done = false;
+        const t = setTimeout(() => {
+          if (done) return;
+          done = true;
+          s.onerror = null; s.onload = null;
+          reject(new Error('Script load timeout'));
+        }, timeoutMs);
+        s.onload = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(t);
+          (s as HTMLScriptElement).setAttribute('data-loaded', '1');
+          resolve();
+        };
+        s.onerror = (e) => {
+          if (done) return;
+          done = true;
+          clearTimeout(t);
+          reject(new Error('Failed to load html5-qrcode'));
+        };
         document.head.appendChild(s);
       } catch (e) {
         reject(e);
       }
     });
 
+    const loadWithFallback = async () => {
+      setLoadError(null);
+      for (const url of CDN_URLS) {
+        try {
+          await loadScript(url);
+          if ((globalThis as any).Html5QrcodeScanner) return;
+        } catch (err) {
+          console.warn('Failed to load html5-qrcode from', url, err);
+          // try next
+        }
+      }
+      throw new Error('All CDNs failed');
+    };
+
     const initScanner = async () => {
       try {
-        await loadScriptIfNeeded();
+        await loadWithFallback();
       } catch (e) {
         console.error('Failed to load html5-qrcode library', e);
+        setLoadError('Failed to load scanner library. Check network or allow external scripts.');
         return;
       }
 
@@ -90,6 +134,7 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
         scanner.render(onScanSuccess, onScanFailure);
       } catch (err) {
         console.error('Failed to initialize QR scanner', err);
+        setLoadError('Failed to initialize scanner. See console for details.');
       }
     };
 
@@ -104,6 +149,8 @@ export const VerificationScanner: React.FC<VerificationScannerProps> = ({ verifi
       }
     };
   }, [verifyMember]);
+
+
 
   const handleExport = () => {
     const dataToExport = verifiedMembers.map(m => ({
